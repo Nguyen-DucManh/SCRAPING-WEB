@@ -3,6 +3,8 @@ import axios from 'axios';
 import cheerio from 'cheerio';
 import fs from 'fs';
 import pLimit from 'p-limit';
+import XLSX from 'xlsx'; 
+
 
 const fetchShelves = async (page) => {
   try {
@@ -22,7 +24,7 @@ const fetchShelves = async (page) => {
         let image = campaign.find('picture.img').attr('src');
         let link = campaign.find('a.d-block.thumb').attr('href');         
         let price = campaign.find('span.main-price').text();
-        let title_id =  link != undefined && link.split('?').length > 0 ? link.split('?')[0] : "NONE";
+        let title_id =  link != undefined && link.split('?').length > 0 ? link.split('/').pop().split('?')[0] : "NONE";
         let element = {
           "crawler": "Fousel",
           "domainName": "fousel.com",
@@ -33,7 +35,7 @@ const fetchShelves = async (page) => {
               }
             ],
           "title_id": title_id,
-          "url": `https://fousel.com${title_id}`, // Concatenate 'link' variable
+          "url": `https://fousel.com/${title_id}`, // Concatenate 'link' variable
           "price": price
         }
 
@@ -69,10 +71,16 @@ const fetchAllShelves = async () => {
   try {
     const shelves = await fetchAllShelves();
     const jsonData = JSON.stringify(shelves, null, 2);
-    fs.writeFile('shelve.json', jsonData, (err) => {
-      if (err) throw err;
-      console.log('The file has been saved!');
-    });
+
+    const wb = XLSX.utils.book_new();
+
+    const ws = XLSX.utils.json_to_sheet(shelves);
+
+    XLSX.utils.book_append_sheet(wb, ws, "Shelves");
+
+    XLSX.writeFile(wb, 'shelve.xlsx');
+
+    console.log('The file has been saved!');
   } catch (error) {
     console.error("Error occurred:", error);
   }
