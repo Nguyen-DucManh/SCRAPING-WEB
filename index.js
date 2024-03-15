@@ -1,80 +1,84 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+//Nguyễn Đức Mạnh
+import puppeteer from 'puppeteer';
+import cheerio from 'cheerio';
+import fs from 'fs';
+import pLimit from 'p-limit';
 
-// Hàm sleep
-const sleep = (milliseconds) => {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-};
-
-const fetchShelves = async () => {
-  let header = {
-    'User-Agent':
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0",
-  };
-
+const fetchShelves = async (page) => {
   try {
-    const url = 'https://www.amazon.com/s?i=fashion&rh=n%3A7141123011%2Cp_28%3AHello&dc&page=2&hidden-keywords=%22Lightweight%2C+Classic+fit%2C+Double-needle+sleeve+and+bottom+hem%22-tanktop+-raglan+-vneck+-longsleeve&qid=1709821626&refresh=1&ref=sr_pg_2';
-    const response = await axios.get(url, { headers: header });
-    await sleep(2000); // Wait for 2 seconds
-    const html = response.data;
+    const url =  `https://fousel.com/vi/collection?page=${page}`;
+    const browser = await puppeteer.launch(); 
 
+    const page2 = await browser.newPage(); 
+
+    await page2.goto(url, { 
+      waitUntil: 'networkidle0', 
+    }); 
+   
+    const html = await page2.content(); 
     const $ = cheerio.load(html);
-
-    const links = [];
-    $('li.a-spacing-micro.s-navigation-indent-2').each((index, element) => {
-      const link = $(element).find('a.a-link-normal.s-navigation-item').attr('href');
-      links.push(link);
-    });
-
+    await browser.close(); 
+    let contentValue = $('.container-xl.py-4');
     const shelves = [];
-
-    for (let i = 0; i < links.length; i++) {
-      const url = `https://www.amazon.com${links[i]}`;
-      const response = await axios.get(url, { headers: header });
-      await sleep(2000); // Wait for 2 seconds
-      const html = response.data;
-
-      const $ = cheerio.load(html);
-
-      $('div.sg-col-4-of-12.s-result-item.s-asin.sg-col-4-of-16.sg-col.sg-col-4-of-20').each(
-        (_idx, el) => {
-          const shelf = $(el);
-          const title = shelf.find('span.a-size-base-plus.a-color-base.a-text-normal').text();
-          const image = shelf.find('img.s-image').attr('src');
-          const link = shelf.find('a.a-link-normal.a-text-normal').attr('href');
-          const parts = image.split("/");
-          const code = parts[5].split(".")[0];
-
-          let element = {
-            "crawler": "Amazon",
-            "domainName": "amazon.com",
-            "id": link.split('/')[3],
-            "images": [
+    contentValue.find("div.campain-list.row.mt-4").each((_idx, el) => {
+      $(el).find('div.col-6.mb-3.col-lg-4').each((_idx, el) => {
+        let campaign = $(el);
+        let tmpHtml = cheerio.load(campaign.find('a.d-block.thumb').html());
+        let title = tmpHtml('picture').attr('title');
+        let image = tmpHtml('img').attr('src');
+        let link = campaign.find('a.d-block.thumb').attr('href');         
+        let price = campaign.find('span.main-price').text();
+        let title_id =  link != undefined && link.split('?').length > 0 ? link.split('?')[0] : "NONE";
+        let element = {
+          "crawler": "Fousel",
+          "domainName": "fousel.com",
+          "title": title,
+          "images": [
               {
-                "id": `amz_${code}`,
-                "url": image
+                "url": image 
               }
             ],
-            "siteProductId": link.split('/')[3],
-            "title": title,
-            "url": `https://amazon.com/dp/${link.split('/')[3]}`
-          }
-
-          shelves.push(element);
+          "title_id": title_id,
+          "url": `https://fousel.com${title_id}`, // Concatenate 'link' variable
+          "price": price
         }
-      );
-    }
 
+        console.log(element);
+        shelves.push(element);
+      });
+    });
     return shelves;
   } catch (error) {
     throw error;
   }
 };
+const fetchAllShelves = async () => {
+  let promises = [];
+  const limit = pLimit(5)
+
+  for (let i = 1; i <= 29; i++) {
+    promises.push(limit(async () => {
+       return (await fetchShelves(i));
+    }
+    ));
+  }
+
+  let preResults = await Promise.all(promises);
+  let results = []
+  preResults.forEach(item => {
+    results.push(...item.filter(it => results.findIndex(i => i.url === it.url) == -1))
+  })
+  return results;
+};
 
 (async () => {
   try {
-    const shelves = await fetchShelves();
-    console.log(JSON.stringify(shelves, null, 2));
+    const shelves = await fetchAllShelves();
+    const jsonData = JSON.stringify(shelves, null, 2);
+    fs.writeFile('shelve.json', jsonData, (err) => {
+      if (err) throw err;
+      console.log('The file has been saved!');
+    });
   } catch (error) {
     console.error("Error occurred:", error);
   }
